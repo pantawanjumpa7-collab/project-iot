@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -19,7 +18,10 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  ReferenceLine,
 } from "recharts";
+import BoxSelector, { useBoxSelection } from "./components/BoxSelector";
+import TripInfo from "./components/TripInfo";
 
 function formatDate(ts) {
   if (!ts) return "-";
@@ -30,37 +32,43 @@ function formatDate(ts) {
   });
 }
 
+const MODE_LABEL = {
+  live: "ข้อมูลจาก ThingsBoard",
+  demo: "ข้อมูลตัวอย่าง",
+  "no-device": "กล่องนี้ยังไม่ผูกอุปกรณ์",
+};
+
 export default function DashboardPage() {
+  const { boxes, role, boxId, setBoxId, ready } = useBoxSelection();
+
   const [telemetry, setTelemetry] = useState(null);
   const [history, setHistory] = useState([]);
   const [alarms, setAlarms] = useState([]);
   const [error, setError] = useState("");
 
+  const noTripForDriver = ready && role === "driver" && boxes.length === 0;
+
   useEffect(() => {
+    if (!ready || noTripForDriver) return;
+
     let alive = true;
+    const boxQuery = boxId ? `box=${encodeURIComponent(boxId)}` : "";
 
     async function loadData() {
       try {
         const responses = await Promise.all([
-          fetch("/api/vaccine/telemetry", {
-            cache: "no-store",
-          }),
-          fetch("/api/vaccine/history?days=1", {
-            cache: "no-store",
-          }),
-          fetch("/api/vaccine/alarms", {
-            cache: "no-store",
-          }),
+          fetch(`/api/vaccine/telemetry?${boxQuery}`, { cache: "no-store" }),
+          fetch(`/api/vaccine/history?days=1&${boxQuery}`, { cache: "no-store" }),
+          fetch(`/api/vaccine/alarms?${boxQuery}`, { cache: "no-store" }),
         ]);
 
         if (responses.some((response) => !response.ok)) {
           throw new Error("โหลดข้อมูลไม่สำเร็จ");
         }
 
-        const [telemetryData, historyData, alarmData] =
-          await Promise.all(
-            responses.map((response) => response.json())
-          );
+        const [telemetryData, historyData, alarmData] = await Promise.all(
+          responses.map((response) => response.json())
+        );
 
         if (!alive) return;
 
@@ -83,21 +91,26 @@ export default function DashboardPage() {
       alive = false;
       clearInterval(timer);
     };
-  }, []);
+  }, [ready, boxId, noTripForDriver]);
 
+  const lower = telemetry?.lowerLimit ?? 2;
+  const upper = telemetry?.upperLimit ?? 8;
   const temperature = telemetry?.temperature;
   const humidity = telemetry?.humidity;
 
   const tempStatus =
     temperature == null
       ? "ไม่มีข้อมูล"
-      : temperature < 2 || temperature > 8
+      : temperature < lower || temperature > upper
         ? "ผิดเกณฑ์"
         : "อยู่ในเกณฑ์";
 
-  const activeAlarms = alarms.filter(
-    (alarm) => alarm.status === "ACTIVE"
-  ).length;
+  const limitNote =
+    telemetry?.limitSource === "vaccine"
+      ? `เกณฑ์ ${telemetry.trip?.vaccine?.name} ${lower}–${upper} °C`
+      : `เกณฑ์มาตรฐาน ${lower}–${upper} °C`;
+
+  const activeAlarms = alarms.filter((alarm) => alarm.status === "ACTIVE").length;
 
   const chartData = history.map((item) => ({
     ...item,
@@ -107,138 +120,113 @@ export default function DashboardPage() {
     }),
   }));
 
+  if (noTripForDriver) {
+    return (
+      <>
+        <header className="page-header">
+          <div>
+            <h1>Dashboard ภาพรวม</h1>
+            <p>ระบบติดตามและรายงานการขนส่งวัคซีนด้วย IoT</p>
+          </div>
+        </header>
+        <div className="notice">
+          ยังไม่มีเที่ยวขนส่งที่ได้รับมอบหมาย ดูรายละเอียดได้ที่เมนู{" "}
+          <Link href="/trips">เที่ยวขนส่ง</Link>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <header className="page-header">
         <div>
           <h1>Dashboard ภาพรวม</h1>
-          <p>
-            ระบบติดตามและรายงานการขนส่งวัคซีนด้วย IoT
-          </p>
+          <p>ระบบติดตามและรายงานการขนส่งวัคซีนด้วย IoT</p>
         </div>
 
-        <span className="demo-badge">
-          <Activity size={15} />
-          {telemetry?.mode === "live"
-            ? "ข้อมูลจาก ThingsBoard"
-            : "ข้อมูลตัวอย่าง"}
-        </span>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <BoxSelector boxes={boxes} boxId={boxId} onChange={setBoxId} />
+          <span className="demo-badge">
+            <Activity size={15} />
+            {MODE_LABEL[telemetry?.mode] || "กำลังโหลด"}
+          </span>
+        </div>
       </header>
 
-      {error && (
-        <div className="notice">{error}</div>
+      {error && <div className="notice">{error}</div>}
+
+      {telemetry?.mode === "no-device" && (
+        <div className="notice">
+          กล่อง {telemetry.box?.box_code} ยังไม่ได้ผูก Device ID ของ ThingsBoard
+          เพิ่มได้ที่เมนู <Link href="/boxes">กล่องวัคซีน</Link>
+        </div>
       )}
 
       <section className="stats-grid">
         <div className="stat-card">
           <div className="stat-top">
-            <span className="stat-label">
-              อุณหภูมิล่าสุด
-            </span>
-            <div
-              className="stat-icon"
-              style={{
-                background: "#e4f6f2",
-                color: "#0c9488",
-              }}
-            >
+            <span className="stat-label">อุณหภูมิล่าสุด</span>
+            <div className="stat-icon" style={{ background: "#e4f6f2", color: "#0c9488" }}>
               <Thermometer size={21} />
             </div>
           </div>
-
-          <div className="stat-value">
+          <div
+            className="stat-value"
+            style={tempStatus === "ผิดเกณฑ์" ? { color: "#b91c1c" } : undefined}
+          >
             {temperature ?? "--"} °C
           </div>
-
           <div className="stat-note">
-            เกณฑ์ตัวอย่าง 2–8 °C · {tempStatus}
+            {limitNote} · {tempStatus}
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-top">
-            <span className="stat-label">
-              ความชื้นล่าสุด
-            </span>
-            <div
-              className="stat-icon"
-              style={{
-                background: "#e6efff",
-                color: "#3869ba",
-              }}
-            >
+            <span className="stat-label">ความชื้นล่าสุด</span>
+            <div className="stat-icon" style={{ background: "#e6efff", color: "#3869ba" }}>
               <Droplets size={21} />
             </div>
           </div>
-
-          <div className="stat-value">
-            {humidity ?? "--"} %
-          </div>
-
-          <div className="stat-note">
-            ค่าที่อ่านได้จากเซนเซอร์
-          </div>
+          <div className="stat-value">{humidity ?? "--"} %</div>
+          <div className="stat-note">ค่าที่อ่านได้จากเซนเซอร์</div>
         </div>
 
         <div className="stat-card">
           <div className="stat-top">
-            <span className="stat-label">
-              อุปกรณ์ตรวจวัด
-            </span>
-            <div
-              className="stat-icon"
-              style={{
-                background: "#e4f6ec",
-                color: "#16804a",
-              }}
-            >
+            <span className="stat-label">กล่องวัคซีน</span>
+            <div className="stat-icon" style={{ background: "#e4f6ec", color: "#16804a" }}>
               <Radio size={21} />
             </div>
           </div>
-
-          <div className="stat-value" style={{ fontSize: 21 }}>
-            {telemetry ? telemetry.deviceName : "กำลังโหลด"}
+          <div className="stat-value">
+            {telemetry ? telemetry.box?.box_code || "-" : "กำลังโหลด"}
           </div>
-
           <div className="stat-note">
-            อัปเดตทุก 30 วินาที
+            {telemetry?.deviceId
+              ? `อุปกรณ์ ${telemetry.deviceId.slice(0, 8)}… · อัปเดตทุก 30 วินาที`
+              : "อัปเดตทุก 30 วินาที"}
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-top">
-            <span className="stat-label">
-              Alarm ที่ยัง Active
-            </span>
-            <div
-              className="stat-icon"
-              style={{
-                background: "#fff0df",
-                color: "#b66b13",
-              }}
-            >
+            <span className="stat-label">Alarm ที่ยัง Active</span>
+            <div className="stat-icon" style={{ background: "#fff0df", color: "#b66b13" }}>
               <BellRing size={21} />
             </div>
           </div>
-
-          <div className="stat-value">
-            {activeAlarms}
-          </div>
-
-          <div className="stat-note">
-            ตรวจสอบรายละเอียดในเมนูแจ้งเตือน
-          </div>
+          <div className="stat-value">{activeAlarms}</div>
+          <div className="stat-note">เฉพาะอุปกรณ์ของกล่องที่เลือก</div>
         </div>
       </section>
 
       <section className="content-grid">
         <div className="panel">
-          <h2 className="panel-title">
-            กราฟอุณหภูมิย้อนหลัง
-          </h2>
-
+          <h2 className="panel-title">กราฟอุณหภูมิย้อนหลัง</h2>
           <p className="panel-subtitle">
-            แสดงข้อมูลย้อนหลัง 24 ชั่วโมง
+            ย้อนหลัง 24 ชั่วโมง · เส้นประสีแดงคือเกณฑ์ {lower}–{upper} °C
           </p>
 
           <div className="chart-wrap">
@@ -246,8 +234,15 @@ export default function DashboardPage() {
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="time" />
-                <YAxis domain={[0, "auto"]} />
+                <YAxis
+                  domain={[
+                    (dataMin) => Math.floor(Math.min(dataMin, lower) - 1),
+                    (dataMax) => Math.ceil(Math.max(dataMax, upper) + 1),
+                  ]}
+                />
                 <Tooltip />
+                <ReferenceLine y={upper} stroke="#dc2626" strokeDasharray="6 4" />
+                <ReferenceLine y={lower} stroke="#dc2626" strokeDasharray="6 4" />
                 <Line
                   type="monotone"
                   dataKey="temperature"
@@ -262,66 +257,56 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="panel">
-          <h2 className="panel-title">
-            สรุปสถานะระบบ
-          </h2>
+        <TripInfo box={telemetry?.box} trip={telemetry?.trip} />
+      </section>
 
-          <p className="panel-subtitle">
-            สถานะจากข้อมูลที่อ่านได้ล่าสุด
-          </p>
+      <section className="panel" style={{ marginBottom: 20 }}>
+        <h2 className="panel-title">สรุปสถานะระบบ</h2>
 
-          <div className="status-list">
-            <div className="status-row">
-              <span
-                className="status-dot"
-                style={{ background: "#0c9488" }}
-              />
-              <div>
-                <strong>อุณหภูมิ</strong>
-                <p>{tempStatus}</p>
-              </div>
-            </div>
-
-            <div className="status-row">
-              <span
-                className="status-dot"
-                style={{ background: "#3869ba" }}
-              />
-              <div>
-                <strong>ข้อมูลเซนเซอร์</strong>
-                <p>
-                  {telemetry
-                    ? `รับข้อมูล ${formatDate(telemetry.lastSeen)}`
-                    : "ยังไม่มีข้อมูล"}
-                </p>
-              </div>
-            </div>
-
-            <div className="status-row">
-              <span
-                className="status-dot"
-                style={{ background: "#d97706" }}
-              />
-              <div>
-                <strong>การแจ้งเตือน</strong>
-                <p>มี {activeAlarms} เหตุการณ์ที่ต้องตรวจสอบ</p>
-              </div>
+        <div className="status-list">
+          <div className="status-row">
+            <span
+              className="status-dot"
+              style={{ background: tempStatus === "ผิดเกณฑ์" ? "#dc2626" : "#0c9488" }}
+            />
+            <div>
+              <strong>อุณหภูมิ</strong>
+              <p>{tempStatus}</p>
             </div>
           </div>
 
-          <div style={{ marginTop: 26 }}>
-            <Link href="/alarms" className="secondary-button">
-              ดูประวัติการแจ้งเตือน
-              <ArrowUpRight size={16} />
-            </Link>
+          <div className="status-row">
+            <span className="status-dot" style={{ background: "#3869ba" }} />
+            <div>
+              <strong>ข้อมูลเซนเซอร์</strong>
+              <p>
+                {telemetry?.lastSeen
+                  ? `รับข้อมูลล่าสุด ${formatDate(telemetry.lastSeen)}`
+                  : "ยังไม่มีข้อมูล"}
+              </p>
+            </div>
           </div>
+
+          <div className="status-row">
+            <span className="status-dot" style={{ background: "#d97706" }} />
+            <div>
+              <strong>การแจ้งเตือน</strong>
+              <p>มี {activeAlarms} เหตุการณ์ที่ต้องตรวจสอบ</p>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <Link href="/alarms" className="secondary-button">
+            ดูประวัติการแจ้งเตือน
+            <ArrowUpRight size={16} />
+          </Link>
         </div>
       </section>
 
       <section className="table-panel">
         <div className="table-heading">
-          <h2>เหตุการณ์ล่าสุด</h2>
+          <h2>เหตุการณ์ล่าสุดของกล่องนี้</h2>
           <Link href="/alarms" className="secondary-button">
             ดูทั้งหมด
           </Link>
@@ -337,7 +322,6 @@ export default function DashboardPage() {
               <th>สถานะ</th>
             </tr>
           </thead>
-
           <tbody>
             {alarms.slice(0, 5).map((alarm) => (
               <tr key={alarm.id}>
@@ -348,9 +332,7 @@ export default function DashboardPage() {
                 <td>
                   <span
                     className={
-                      alarm.status === "ACTIVE"
-                        ? "status-badge danger"
-                        : "status-badge good"
+                      alarm.status === "ACTIVE" ? "status-badge danger" : "status-badge good"
                     }
                   >
                     {alarm.status}
