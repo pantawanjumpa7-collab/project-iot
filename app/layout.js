@@ -1,25 +1,29 @@
-
-import "./globals.css";
-import Sidebar from "./components/Sidebar";
+import { Suspense } from 'react'
+import './globals.css'
+import Sidebar from './components/Sidebar'
+import UserMenu from './components/UserMenu'
+import AppShell from './components/AppShell'
 
 export const metadata = {
-  title: "Vaccine Transport Monitoring",
-  description:
-    "ระบบติดตามและรายงานการขนส่งวัคซีนด้วย IoT",
-};
+  title: 'Vaccine Transport Monitoring',
+  description: 'ระบบติดตามและรายงานการขนส่งวัคซีนด้วย IoT',
+}
 
 export default function RootLayout({ children }) {
   return (
     <html lang="th">
       <body>
-        <div className="app-shell">
-          <Sidebar />
-
-          <main className="main-content">
-            {children}
-          </main>
-        </div>
+        <AppShell
+          sidebar={<Sidebar />}
+          userMenu={
+            <Suspense fallback={null}>
+              <UserMenu />
+            </Suspense>
+          }
+        >
+          {children}
+        </AppShell>
       </body>
     </html>
-  );
+  )
 }

@@ -1,0 +1,15 @@
+export const card = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 24, marginBottom: 20 }
+export const title = { margin: '0 0 4px', fontSize: 28, color: '#0f172a' }
+export const subtitle = { margin: '0 0 20px', color: '#64748b', fontSize: 14 }
+export const sectionTitle = { margin: '0 0 16px', fontSize: 17, color: '#0f172a' }
+export const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, alignItems: 'end' }
+export const label = { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#334155' }
+export const input = { padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 14, width: '100%', boxSizing: 'border-box', background: '#fff' }
+export const primaryBtn = { padding: '10px 16px', background: '#0f766e', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer' }
+export const smallBtn = { padding: '6px 10px', background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13, cursor: 'pointer' }
+export const dangerBtn = { padding: '6px 10px', background: '#fff', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 13, cursor: 'pointer' }
+export const table = { width: '100%', borderCollapse: 'collapse', fontSize: 14 }
+export const th = { textAlign: 'left', padding: '10px 8px', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }
+export const td = { padding: '10px 8px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' }
+export const errorBox = { background: '#fee2e2', color: '#b91c1c', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: 16 }
+export const empty = { color: '#94a3b8', textAlign: 'center', padding: 24 }
