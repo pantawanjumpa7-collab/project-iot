@@ -13,6 +13,7 @@ import {
   Package,
   Syringe,
   Truck,
+  Users,
 } from "lucide-react";
 
 const mainMenu = [
@@ -26,6 +27,7 @@ const manageMenu = [
   { href: "/trips", label: "เที่ยวขนส่ง", icon: Truck },
   { href: "/boxes", label: "กล่องวัคซีน", icon: Package },
   { href: "/vaccine-types", label: "ประเภทวัคซีน", icon: Syringe },
+  { href: "/users", label: "ผู้ใช้งาน", icon: Users },
   { href: "/settings", label: "ตั้งค่าระบบ", icon: Settings },
 ];
 
