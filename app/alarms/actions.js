@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '../../lib/supabase/server'
 import { INCIDENT_TYPES } from './labels'
+import { sendLineBroadcast, formatThaiTime } from '../../lib/line'
 
 function back(params) {
   const box = params.box ? `&box=${encodeURIComponent(params.box)}` : ''
@@ -98,7 +99,7 @@ export async function recordTbAlarm(formData) {
   back({ ok: 'บันทึกการจัดการ Alarm เรียบร้อย', box: boxParam })
 }
 
-// แจ้งเหตุการณ์ด้วยตนเอง (พนักงาน หรือคนขับในเที่ยวของตัวเอง)
+// แจ้งเหตุการณ์ด้วยตนเอง (พนักงาน หรือคนขับในเที่ยวของตัวเอง) + ส่ง LINE
 export async function reportIncident(formData) {
   const { supabase, role, userId } = await getUser()
   const boxParam = text(formData, 'box_filter')
@@ -121,7 +122,10 @@ export async function reportIncident(formData) {
 
   // คนขับจะเห็นเฉพาะเที่ยวของตัวเอง ถ้าไม่พบแปลว่าไม่มีสิทธิ์
   const { data: trip } = await supabase
-    .from('trips').select('id, box_id').eq('id', tripId).maybeSingle()
+    .from('trips')
+    .select('id, box_id, trip_code, origin, destination, box:vaccine_boxes(box_code)')
+    .eq('id', tripId)
+    .maybeSingle()
   if (!trip) back({ error: 'ไม่พบเที่ยวขนส่ง หรือคุณไม่มีสิทธิ์', box: boxParam })
 
   const { error } = await supabase.from('incidents').insert({
@@ -137,7 +141,31 @@ export async function reportIncident(formData) {
 
   if (error) back({ error: 'บันทึกไม่สำเร็จ: ' + error.message, box: boxParam })
 
-  back({ ok: 'บันทึกเหตุการณ์เรียบร้อย', box: boxParam })
+  // ส่งแจ้งเตือน LINE (ถ้าส่งไม่สำเร็จ เหตุการณ์ยังถูกบันทึกอยู่)
+  const { data: me } = await supabase
+    .from('profiles').select('full_name').eq('id', userId).maybeSingle()
+
+  const lines = [
+    '🚨 แจ้งเหตุระหว่างขนส่งวัคซีน',
+    `เที่ยว: ${trip.trip_code}`,
+    `กล่อง: ${trip.box?.box_code || '-'}`,
+    `เส้นทาง: ${trip.origin} → ${trip.destination}`,
+    `เหตุการณ์: ${INCIDENT_TYPES[alarmType]}`,
+  ]
+  if (temperature !== null) lines.push(`อุณหภูมิ: ${temperature} °C`)
+  if (description) lines.push(`รายละเอียด: ${description}`)
+  if (actionTaken) lines.push(`ดำเนินการแล้ว: ${actionTaken}`)
+  lines.push(`ผู้แจ้ง: ${me?.full_name || '-'}`)
+  lines.push(`เวลา: ${formatThaiTime()}`)
+
+  const line = await sendLineBroadcast(lines.join('\n'))
+
+  back({
+    ok: line.ok
+      ? 'บันทึกเหตุการณ์และส่งแจ้งเตือน LINE เรียบร้อย'
+      : 'บันทึกเหตุการณ์เรียบร้อย (ส่ง LINE ไม่สำเร็จ: ' + line.reason + ')',
+    box: boxParam,
+  })
 }
 
 // พนักงานปิดเหตุการณ์ พร้อมบันทึกการดำเนินการ
